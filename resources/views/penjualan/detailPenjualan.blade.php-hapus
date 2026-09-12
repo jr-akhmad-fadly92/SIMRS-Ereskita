@@ -1,0 +1,34 @@
+<table class="table table-condensed table-bordered">
+	<tr>
+		<th>Nama Pasien</th> <td>{{ $reg->pasien->nama }}</td>
+	</tr>
+	<tr>
+		<th>Nomor RM</th> <td>{{ $reg->pasien->no_rm }}</td>
+	</tr>
+</table>
+<div class="table-responsive">
+	<table class="table table-condensed table-bordered table-hover">
+		<thead>
+			<tr>
+				<th class="text-center">No</th>
+				<th>Nama Obat</th>
+				<th class="text-center">Jumlah</th>
+				<th class="text-center">Harga</th>
+				<th class="text-center">Hapus</th>
+			</tr>
+		</thead>
+		<tbody>
+			@foreach ($data as $d)
+				<tr>
+					<td class="text-center">{{ $no++ }}</td>
+					<td>{{ $d->masterobat->nama }}</td>
+					<td class="text-center">{{ $d->jumlah }}</td>
+					<td class="text-right">{{ number_format($d->hargajual) }}</td>
+					<td class="text-center">
+						<button class="btn btn-sm btn-danger btn-flat" onclick="hapusObat({{ $d->id }})"><i class="fa fa-trash-o"></i></button>
+					</td>
+				</tr>
+			@endforeach
+		</tbody>
+	</table>
+</div>

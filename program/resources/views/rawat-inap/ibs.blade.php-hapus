@@ -1,0 +1,532 @@
+@extends('master')
+@section('header')
+  <h1>Rawat Inap  <small></small></h1>
+@endsection
+
+@section('content')
+  <div class="box box-primary">
+    <div class="box-header with-border">
+      <h4>Pendaftaran IBS</h4>
+    </div>
+    <div class="box-body">
+      <div class='table-responsive'>
+        <table class='table table-striped table-bordered table-hover table-condensed'>
+          <thead>
+            <tr>
+              <th colspan="4">Data Pasien</th>
+            </tr>
+            <tr>
+              <th>No. RM</th>
+              <th>Nama</th>
+              <th>Tgl. Lahir</th>
+              <th>Alamat</th>
+              <th>Dokter</th>
+							<th>Kelas</th>
+							<th>Kamar</th>
+							<th>Bed</th>
+							<th>Cara Bayar</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>{{ $reg->pasien->no_rm }}</td>
+              <td>{{ $reg->pasien->nama }}</td>
+              <td>{{ tgl_indo($reg->pasien->tgllahir) }}</td>
+              <td>{{ $reg->pasien->alamat }}</td>
+              <td>{{ baca_dokter($reg->dokter_id) }}</td>
+							<td>{{ !empty($irna) ? $irna->kelas->nama : NULL }}</td>
+							<td>{{ !empty($irna) ? $irna->kamar->nama : NULL }}</td>
+							<td>{{ !empty($irna) ? $irna->bed->nama : NULL }}</td>
+							<td>{{ baca_carabayar($jenis->bayar) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+			
+			<h4>#Pendaftaran Sebelumnya</h4>
+			<div class='table-responsive'>
+				<table class='table table-striped table-bordered table-hover table-condensed'>
+					<thead>
+						<tr>
+							<th>No</th>
+							<th>Rencana Operasi</th>
+							<th>Suspect</th>
+						</tr>
+					</thead>
+					<tbody>
+						@foreach ($ibs as $key => $d)
+							<tr>
+								<td>{{ $no++ }}</td>
+								<td>{{ tgl_indo($d->rencana_operasi) }}</td>
+								<td>{!! $d->suspect !!}</td>
+							</tr>
+						@endforeach
+					</tbody>
+				</table>
+			</div>
+			
+			<h4>#Order Tindakan</h4>
+			<div class="nav-tabs-custom" style="margin-bottom:0;">
+				<ul class="nav nav-tabs">
+					<li id="tabtindakan" class="active"><a href="#tab_tindakan" data-toggle="tab">TINDAKAN</a></li>
+					<li id="tabpakaiobat"><a href="#tab_pakaiobat" data-toggle="tab">PEMAKAIAN OBAT</a></li>
+				</ul>
+				<div class="tab-content">
+					<div class="tab-pane active" id="tab_tindakan">
+						<div class="row">
+							<div class="box-bodys" style="padding:0 10px;">
+								<div class="col-md-12 no-padding">
+									<div class="box-info" style="margin-bottom:10px;">
+										<div class="box">
+											<div class="box-body">
+												@if(strtolower(Auth::user()->role()->first()->name)=='operasi')
+													{!! Form::open(['method' => 'POST', 'url' => 'operasi/simpan-tindakan', 'class' => 'form-horizontal']) !!}
+													{!! Form::hidden('registrasi_id', $jenis->id) !!}
+													{!! Form::hidden('jenis', $jenis->bayar) !!}
+													{!! Form::hidden('pasien_id', $jenis->pasien_id) !!}
+													{!! Form::hidden('ranap_ibs', true) !!}
+													<div class="row">
+														<div class="col-md-6">
+															<div class="form-group{{ $errors->has('dokter_irna') ? ' has-error' : '' }}">
+																{!! Form::label('dokter_irna', 'Dokter Rawat Inap', ['class' => 'col-sm-4']) !!}
+																<div class="col-sm-8">
+																	{!! Form::select('dokter_irna', $dokter, null, ['class' => 'chosen-select', 'placeholder'=>'']) !!}
+																	<small class="text-danger">{{ $errors->first('dokter_irna') }}</small>
+																</div>
+															</div>
+															<div class="form-group{{ $errors->has('dokter_anestesi') ? ' has-error' : '' }}">
+																{!! Form::label('dokter_anestesi', 'Dokter Anestesi', ['class' => 'col-sm-4']) !!}
+																<div class="col-sm-8">
+																	{!! Form::select('dokter_anestesi', $dokter, null, ['class' => 'chosen-select', 'placeholder'=>'']) !!}
+																	<small class="text-danger">{{ $errors->first('dokter_anestesi') }}</small>
+																</div>
+															</div>
+															<div class="form-group{{ $errors->has('dokter_bedah') ? ' has-error' : '' }}">
+																{!! Form::label('dokter_bedah', 'Dokter Bedah', ['class' => 'col-sm-4']) !!}
+																<div class="col-sm-8">
+																	{!! Form::select('dokter_bedah', $dokter, null, ['class' => 'chosen-select', 'placeholder'=>'']) !!}
+																	<small class="text-danger">{{ $errors->first('dokter_bedah') }}</small>
+																</div>
+															</div>
+															<div class="form-group{{ $errors->has('operator') ? ' has-error' : '' }}">
+																{!! Form::label('operator', 'Operator', ['class' => 'col-sm-4', 'placeholder'=>'']) !!}
+																<div class="col-sm-8">
+																	{!! Form::select('operator', $dokter, null, ['class' => 'chosen-select', 'placeholder'=>'']) !!}
+																	<small class="text-danger">{{ $errors->first('operator') }}</small>
+																</div>
+															</div>															
+															<div class="form-group{{ $errors->has('tarif_id') ? ' has-error' : '' }}">
+																{!! Form::label('tarif_id', 'Tindakan', ['class' => 'col-sm-4']) !!}
+																<div class="col-sm-8">
+																		<select class="form-control chosen-select" name="tarif_id" id="tarif_id">
+																		<option value=""></option>
+																		@foreach (Modules\Tarif\Entities\Tarif::where('jenis', 'TI')->where('kategoritarif_id', 4)->get() as $d)
+																			<option value="{{ $d->id }}">{{ $d->nama }} | {{ number_format($d->total) }}</option>
+																		@endforeach
+																		</select>
+																	<small class="text-danger">{{ $errors->first('tarif_id') }}</small>
+																</div>
+															</div>
+															<div class="form-group{{ $errors->has('jumlah') ? ' has-error' : '' }}">
+																{!! Form::label('jumlah', 'Jumlah', ['class' => 'col-sm-4']) !!}
+																<div class="col-sm-8">
+																	{!! Form::number('jumlah', 1, ['class' => 'form-control']) !!}
+																	<small class="text-danger">{{ $errors->first('jumlah') }}</small>
+																</div>
+															</div>
+														</div>
+														<div class="col-md-6">
+															<div class="form-group{{ $errors->has('perawat_bedah1') ? ' has-error' : '' }}">
+																{!! Form::label('perawat_bedah1', 'Perawat Bedah 1', ['class' => 'col-sm-4', 'placeholder'=>'']) !!}
+																<div class="col-sm-8">
+																	{!! Form::select('perawat_bedah1', $perawat, null, ['class' => 'chosen-select', 'placeholder'=>'']) !!}
+																	<small class="text-danger">{{ $errors->first('perawat_bedah1') }}</small>
+																</div>
+															</div>
+															<div class="form-group{{ $errors->has('perawat_bedah2') ? ' has-error' : '' }}">
+																{!! Form::label('perawat_bedah2', 'Perawat Bedah 2', ['class' => 'col-sm-4']) !!}
+																<div class="col-sm-8">
+																	{!! Form::select('perawat_bedah2', $perawat, null, ['class' => 'chosen-select', 'placeholder'=>'']) !!}
+																	<small class="text-danger">{{ $errors->first('perawat_bedah2') }}</small>
+																</div>
+															</div>
+															<div class="form-group{{ $errors->has('perawat_bedah3') ? ' has-error' : '' }}">
+																{!! Form::label('perawat_bedah3', 'Perawat Bedah 3', ['class' => 'col-sm-4']) !!}
+																<div class="col-sm-8">
+																	{!! Form::select('perawat_bedah3', $perawat, null, ['class' => 'chosen-select', 'placeholder'=>'']) !!}
+																	<small class="text-danger">{{ $errors->first('perawat_bedah3') }}</small>
+																</div>
+															</div>
+															<div class="form-group{{ $errors->has('ass_anestesi') ? ' has-error' : '' }}">
+																{!! Form::label('perawat', 'Ass Anestesi', ['class' => 'col-sm-4']) !!}
+																<div class="col-sm-8">
+																	{!! Form::select('ass_anestesi', $perawat, null, ['class' => 'chosen-select', 'placeholder'=>'']) !!}
+																	<small class="text-danger">{{ $errors->first('ass_anestesi') }}</small>
+																</div>
+															</div>
+															<div class="form-group{{ $errors->has('tanggal') ? ' has-error' : '' }}">
+																{!! Form::label('tanggal', 'Tanggal', ['class' => 'col-sm-4']) !!}
+																<div class="col-sm-8">
+																	{!! Form::text('tanggal', null, ['class' => 'form-control datepicker']) !!}
+																	<small class="text-danger">{{ $errors->first('tanggal') }}</small>
+																</div>
+															</div>
+														</div>
+													</div>
+													<div class="form-group">
+														<div class="col-md-4"></div>
+														<div class="col-md-4">
+															{!! Form::submit("Tambah Tindakan", ['class' => 'btn btn-success btn-flat btn-block', 'onclick'=>'javascript:return confirm("Yakin Data Ini Sudah Benar")']) !!}
+														</div>
+														<div class="col-md-4"></div>
+													</div>
+													{!! Form::close() !!}
+												@elseif(strtolower(Auth::user()->role()->first()->name)=='rawatinap')
+													{!! Form::open(['method' => 'POST', 'url' => 'operasi/simpan-order', 'class' => 'form-horizontal']) !!}
+													{!! Form::hidden('registrasi_id', $jenis->id) !!}
+													{!! Form::hidden('ranap_ibs', true) !!}
+													<div class="row">
+														<div class="col-md-12">	
+															<div class="col-md-4">									
+																<div class="form-group{{ $errors->has('tindakan_operasi') ? ' has-error' : '' }}">
+																	{!! Form::label('tindakan_operasi', 'Tindakan', ['class' => 'col-md-12']) !!}
+																	<div class="col-md-12">
+																			<select class="form-control chosen-select" name="tindakan_operasi" id="tindakan_operasi">
+																			<option value=""></option>
+																			@foreach (App\TindakanOperasi::get() as $d)
+																				<option value="{{ $d->id }}">{{ $d->tindakan_operasi }}</option>
+																			@endforeach
+																			</select>
+																		<small class="text-danger">{{ $errors->first('tindakan_operasi') }}</small>
+																	</div>
+																</div>
+															</div>															
+															<div class="col-md-4">									
+																<div class="form-group{{ $errors->has('tanggal') ? ' has-error' : '' }}">
+																	{!! Form::label('tanggal', 'Tanggal', ['class' => 'col-md-12']) !!}
+																	<div class="col-md-12">
+																		{!! Form::text('tanggal', date('d-m-Y'), ['class' => 'form-control datepicker']) !!}
+																		<small class="text-danger">{{ $errors->first('tanggal') }}</small>
+																	</div>
+																</div>
+															</div>
+															<div class="col-md-4">									
+																{!! Form::label('', 'Aksi', ['class' => 'col-md-12']) !!}
+																{!! Form::submit("Tambah Jenis Tindakan", ['style' => 'margin-top:7px;','class' => 'btn btn-success btn-flat btn-block', 'onclick'=>'javascript:return confirm("Yakin Data Ini Sudah Benar")']) !!}
+															</div>
+														</div>
+													</div>
+													{!! Form::close() !!}
+												@endif
+											</div>
+										</div>
+										<h5><b>#Jenis Tindakan</b></h5>
+										<div class='table-responsive'>
+											<table class='table table-striped table-bordered table-hover table-condensed'>
+												<thead>
+													<tr>
+														<th>No</th>
+														<th>Nama</th>
+														@role(['supervisor', 'operasi','administrator','rawatjalan','rawatdarurat','rawatinap'])
+														<th>Hapus</th>
+														@endrole
+													</tr>
+												</thead>
+												<tbody>
+													@php
+														$no=1;
+													@endphp
+													@if($detil_order!=null)
+													@foreach($detil_order as $key => $d)
+													<tr>
+														<td>{{ $no++ }}</td>
+														<td>{{ $d->tindakanOperasi->tindakan_operasi }}</td>
+														@role(['supervisor', 'operasi','administrator','rawatjalan','rawatdarurat','rawatinap'])
+															<td>
+																<a href="{{ url('operasi/hapus-jenisorder/'.$d->id.'/'.$d->registrasi_id) }}" onclick="return confirm('Yakin akan di hapus?')" class="btn btn-danger btn-sm btn-flat"><i class="fa fa-trash-o"></i></a>
+															</td>
+														@endrole
+													</tr>
+													@endforeach
+													@endif
+												</tbody>
+											</table>
+										</div>
+										@if(strtolower(Auth::user()->role()->first()->name)=='operasi')
+											<h5><b>#Detil Tindakan</b></h5>
+											<div class='table-responsive'>
+												<table class='table table-striped table-bordered table-hover table-condensed' id="rincian">
+												<thead>
+													<tr>
+													<th class="text-center" style="vertical-align: middle;">No</th>
+													<th class="text-center" style="vertical-align: middle;">Tindakan</th>
+													<th class="text-center" style="vertical-align: middle;">Jenis Pelayanan</th>
+													<th class="text-center" style="vertical-align: middle;">Biaya</th>
+													<th class="text-center" style="vertical-align: middle;">Jml</th>
+													<th class="text-center" style="vertical-align: middle;">Total</th>
+													<th class="text-center" style="vertical-align: middle;">DPJP</th>
+													<th class="text-center" style="vertical-align: middle;">Petugas Entry</th>
+													<th class="text-center" style="vertical-align: middle;">Waktu</th>
+													<th class="text-center" style="vertical-align: middle;">Bayar</th>
+													@role(['supervisor', 'administrator', 'rawatinap', 'ibs'])
+														<th>Hapus</th>
+													@endrole
+													</tr>
+												</thead>
+												<tbody>
+													@foreach ($folio as $key => $d)
+													<tr>
+														<td>{{ $no++ }}</td>
+														<td>{{ ($d->tarif_id == 20000) ? 'Resep Obat' : ($d->tarif_id <> 0 ) ? $d->tarif->nama : '' }}</td>
+														<td>
+														@if ($d->jenis == 'TA')
+															Tindakan di Rawat Jalan
+														@elseif ($d->jenis == 'TG')
+															Tindakan di Rawat Darurat
+														@elseif ($d->jenis == 'TI')
+															Tindakan di Rawat Inap
+														@endif
+														</td>
+														<td>{{ ($d->tarif_id <> 10000 ) ? $d->tarif->total==0 ? 0 : number_format($d->tarif->total,0,',','.') : '' }}</td>
+														<td>{{ ($d->tarif_id <> 10000 ) ? $d->tarif->total==0 ? 0 : ($d->total / $d->tarif->total) : '' }}</td>
+														<td>{{ number_format($d->total,0,',','.') }}</td>
+														<td>{{ baca_dokter($d->dokter_id) }}</td>
+														<td>{{ App\User::where('id', $d->user_id)->first()->name }}</td>
+														<td>{{ $d->created_at->format('d-m-Y') }}</td>
+														<td>
+														@if ($d->lunas == 'Y')
+															<i class="fa fa-check"></i>
+														@else
+															<i class="fa fa-remove"></i>
+														@endif
+														</td>
+														@role(['supervisor', 'administrator', 'rawatinap', 'ibs'])
+															<td>
+															@if ($d->lunas == 'Y')
+																<i class="fa fa-check"></i>
+															@else
+																<a href="{{ url('tindakan/hapus-tindakan/'.$d->id_folio.'/'.$d->registrasi_id.'/'.$d->pasien_id.'/order') }}" onclick="return confirm('Yakin akan di hapus?')" class="btn btn-danger btn-sm btn-flat"><i class="fa fa-trash-o"></i></a>
+															@endif
+															</td>
+														@endrole
+													</tr>
+													@endforeach
+												</tbody>
+												</table>
+											</div>
+										@endif
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+					<div class="tab-pane active" id="tab_pakaiobat">
+						<div class="row">
+							<div class="box-bodys" style="padding:0 10px;">
+								<div class="col-md-12 no-padding">
+									<div class="box box-info" style="margin-bottom:10px;">
+										<div class="box-body">
+											<form id="formAddPakai" method="post" class="form-horizontal">
+												{{ csrf_field() }} {{ method_field('POST') }}
+												{!! Form::hidden('pasien_id', $pasien->id) !!}
+												{!! Form::hidden('idreg', $idreg) !!}
+												{!! Form::hidden('tipe_rawat', $jenis->status_reg) !!}
+												<div class="rowx">
+													<div class="form-group{{ $errors->has('masterobat_id') ? ' has-error' : '' }}">
+														{!! Form::label('masterobat_id', 'Pilih Obat', ['class' => 'col-sm-2']) !!}
+														<div class="col-sm-4 no-padding">
+															<select name="masterobat_id" id="" class="form-control select2">
+															</select>
+															<small class="text-danger">{{ $errors->first('masterobat_id') }}</small>
+														</div>
+														<div class="col-sm-2" style="padding-left:10px;padding-right:0;">
+															<input type="number" name="jumlah" value="1" class="form-control">
+														</div>
+													</div>
+
+													<div class="form-group{{ $errors->has('informasi1') ? ' has-error' : '' }}">
+														{!! Form::label('informasi1', 'Informasi 1', ['class' => 'col-sm-2']) !!}
+														<div class="col-sm-6 no-padding">
+															{!! Form::text('informasi1', null, ['class' => 'form-control', 'autocomplete' => 'off']) !!}
+															<small class="text-danger">{{ $errors->first('informasi1') }}</small>
+														</div>
+													</div>
+
+													<div class="form-group{{ $errors->has('informasi2') ? ' has-error' : '' }}">
+														{!! Form::label('informasi2', 'Informasi 2', ['class' => 'col-sm-2', 'autocomplete' => 'off']) !!}
+														<div class="col-sm-6 no-padding">
+															{!! Form::text('informasi2', null, ['class' => 'form-control']) !!}
+															<small class="text-danger">{{ $errors->first('informasi2') }}</small>
+														</div>
+													</div>
+
+													<div class="form-group{{ $errors->has('cetak') ? ' has-error' : '' }}">
+														<div class="col-sm-8 no-padding">
+															<button type="button" id="saveItemPem" class="btn btn-primary btn-flat pull-right">Tambahkan</button>
+														</div>
+													</div>
+												</div>
+											</form>
+										</div>
+									</div>
+									
+									<div class='table-responsive'>
+										<table id="detailPemakaian" class='table table-striped table-bordered table-hover table-condensed'>
+											<thead>
+												<tr>
+												<th class="text-center">No</th>
+												<th>Nama Obat</th>
+												<th>Satuan</th>
+												<th style="text-align:center">Jml</th>
+												<th style="width:10%" class="text-center">Harga @</th>
+												<th>Hapus</th>
+												</tr>
+											</thead>
+											<tbody>
+												
+											</tbody>
+										</table>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			</div>
+			
+			@if(count($detil_order)>0)
+			<br>
+			<h4>#Tambah Catatan</h4>
+			{!! Form::open(['method' => 'POST', 'url' => 'rawat-inap/save-ibs', 'class' => 'form-horizontal']) !!}
+					{!! Form::hidden('registrasi_id', $reg->id) !!}
+					{!! Form::hidden('rawatinap_id', $irna->id) !!}
+					{!! Form::hidden('no_rm', $reg->pasien->no_rm) !!}
+
+					<div class="form-group{{ $errors->has('rencana_operasi') ? ' has-error' : '' }}">
+							{!! Form::label('rencana_operasi', 'Rencana Operasi', ['class' => 'col-sm-12']) !!}
+							<div class="col-sm-3">
+									{!! Form::text('rencana_operasi', null, ['class' => 'form-control datepicker', 'readonly' => 'true']) !!}
+									<small class="text-danger">{{ $errors->first('rencana_operasi') }}</small>
+							</div>
+					</div>
+					<div class="form-group{{ $errors->has('suspect') ? ' has-error' : '' }}">
+							{!! Form::label('suspect', 'Catatan', ['class' => 'col-sm-12']) !!}
+							<div class="col-sm-12">
+									{!! Form::text('suspect', null, ['class' => 'form-control']) !!}
+									<small class="text-danger">{{ $errors->first('suspect') }}</small>
+							</div>
+					</div>
+
+					<div class="btn-group pull-right">
+							<a href="{{ url('rawat-inap/billing') }}" class="btn btn-warning btn-flat">BATAL</a>
+							{!! Form::submit("ORDER IBS", ['class' => 'btn btn-success btn-flat']) !!}
+					</div>
+			{!! Form::close() !!}
+			@endif
+    </div>
+  </div>
+@endsection
+@section('script')
+<script>
+function ribuan(x) {
+	return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+}
+
+setTimeout(function(){ 
+	var element = document.getElementById("tab_pakaiobat");
+	element.classList.remove("active");
+}, 500);
+
+// master Obat
+$('.select2').select2();
+$('select[name="masterobat_id"]').html('<option value=""></option>');
+$.ajax({
+	url: '/penjualan/master-obat/<?php echo $depo;?>',
+	type: 'GET',
+	dataType: 'json',
+	success: function(data){
+		$.each(data, function(index, val) {
+			$('select[name="masterobat_id"]').append('<option value="'+val.id+'">'+val.nama+' | Rp '+ribuan(val.hargajual)+'</option>');
+		});       
+	}
+});
+
+// view Detail
+var id = $('input[name="registrasi_id"]').val();
+var table = $('#detailPemakaian').DataTable({
+	'language': {
+		'url': '/json/pasien.datatable-language.json',
+	},
+	lengthChange: false,
+	paging      : false,
+	searching   : false,
+	ordering    : false,
+	autoWidth   : false,
+	processing  : false,
+	info        : false,
+	serverSide  : true,
+	ajax: '/pemakaian-detail/'+id,
+	columns: [
+		{data: 'rownum'},
+		{data: 'masterobat_id'},
+		{data: 'satuan'},
+		{data: 'jumlah'},
+		{data: 'hargajual'},
+		{data: 'delete'},
+	]
+});
+
+// save Detail
+$('#saveItemPem').on('click', function () {
+	$.ajax({
+		type: 'POST',
+		url: '/pemakaian-simpan',
+		data: $('#formAddPakai').serialize(),
+		success: function (data) {
+			if(data.sukses == false) {
+				alert(data.message);
+			}else if(data.sukses == true) {
+				table.ajax.reload();
+				$('input[name="masterobat_id"]').val("");
+				$('input[name="jumlah"]').val(1);
+				$('input[name="informasi1"]').val("");
+				$('input[name="informasi2"]').val("");
+			}
+		}
+	});
+});
+
+// hapus Detail
+$(document).on('click', '.hapus', function(e) {
+	e.preventDefault();
+	var id = $(this).attr('data-id');
+	if (confirm('Apakah yakin item ini akan dihapus?')) {
+		$.ajax({
+			url: '/pemakaian-hapus/' + id,
+			type: 'GET',
+			success: function (data) {
+				if(data.sukses == true) {
+					table.ajax.reload();
+				}else{
+					alert("Item gagal dihapus");
+				}
+			}
+		});
+	}
+})
+
+$(function () {
+	$('#rincian').DataTable({
+	  'language'    : {
+		"url": "/json/pasien.datatable-language.json",
+	  },
+	  'paging'      : false,
+	  'lengthChange': false,
+	  'searching'   : true,
+	  'ordering'    : false,
+	  'info'        : false,
+	  'autoWidth'   : false
+	});
+});
+</script>
+@stop

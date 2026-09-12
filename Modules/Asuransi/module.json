@@ -1,0 +1,16 @@
+{
+    "name": "Asuransi",
+    "alias": "asuransi",
+    "description": "",
+    "keywords": [],
+    "active": 1,
+    "order": 0,
+    "providers": [
+        "Modules\\Asuransi\\Providers\\AsuransiServiceProvider"
+    ],
+    "aliases": {},
+    "files": [
+        "start.php"
+    ],
+    "requires": []
+}

@@ -1,0 +1,1204 @@
+<?php
+
+namespace Modules\Tindakan\Http\Controllers;
+use App\Historipemeriksaanfisik;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Routing\Controller;
+use App\MasterJenisAlergi;
+use App\MasterAlergi;
+use Modules\Registrasi\Entities\Folio;
+use Modules\Registrasi\Entities\Dokter;
+use Modules\Registrasi\Entities\Registrasi;
+use Modules\Pasien\Entities\Pasien;
+use Modules\Tarif\Entities\Tarif;
+use Modules\Kategoritarif\Entities\Kategoritarif;
+use Modules\Registrasi\Entities\HistoriStatus;
+use Modules\Poli\Entities\Poli;
+use Modules\Pegawai\Entities\Pegawai;
+use Modules\Icd10\Entities\Icd10;
+use App\Satuanjual;
+use App\Foliopelaksana_tambah;
+use App\Jenisracikan;
+use App\KondisiAkhirPasien;
+use App\Penjualan;
+use App\MasterEtiket;
+use App\TakaranobatEtiket;
+use App\Aturanetiket;
+use App\Rawatinap;
+use App\Operasi;
+use App\Orderlab;
+use App\Orderradiologi;
+use App\Orderfisioterapi;
+use App\Orderkamarbersalin;
+use App\DataOrderRadiologi;
+use Carbon\Carbon;
+use App\Foliopelaksana;
+use App\HistorikunjunganIRJ;
+use App\HistorikunjunganIGD;
+use App\Penjualandetail;
+use App\Permintaanobat;
+use App\Permintaanobatdetail;
+use App\TindakanRadiologi;
+use App\TindakanOperasi;
+use App\Mastermappingbiaya;
+use App\AntrianApotek;
+use App\Pembayaran;
+use Auth;
+use DB;
+use Yajra\DataTables\DataTables;
+use Flashy;
+
+class TindakanController extends Controller
+{
+	public function namaTindakan(){
+		$data['nama_tindakan_operasi'] = TindakanOperasi::all();
+			$data['nama_tindakan_radiologi'] = TindakanRadiologi::all();
+		return view('tindakan::nama_tindakan', $data)->with('no',1);
+	}
+	public function editNamaTindakan($id){
+		$tindakan_nama = "";
+		if(strtolower(Auth::user()->role()->first()->name)=='operasi'){
+			$tindakan = TindakanOperasi::find($id);
+			$tindakan_nama = $tindakan->tindakan_operasi;
+		}elseif(strtolower(Auth::user()->role()->first()->name)=='radiologi'){
+			$tindakan = TindakanRadiologi::find($id);
+			$tindakan_nama = $tindakan->tindakan_radiologi;
+		}
+		return ['tindakan'=>$tindakan_nama];
+	}
+	public function hapusNamaTindakan($id){
+		if(strtolower(Auth::user()->role()->first()->name)=='operasi'){
+			$tindakan = TindakanOperasi::find($id);
+		}elseif(strtolower(Auth::user()->role()->first()->name)=='radiologi'){
+			$tindakan = TindakanRadiologi::find($id);
+		}
+		if($tindakan->delete()){
+			Flashy::success('Nama tindakan berhasil dihapus');
+		}else{
+			Flashy::error('Nama tindakan gagal dihapus');
+		}
+		return redirect('/tindakan/data');
+	}
+	public function simpanNamaTindakan(Request $request){
+		$id = "";
+		if($request['id']!=""){
+			$id = $request['id'];
+		}
+		if(strtolower(Auth::user()->role()->first()->name)=='operasi'){
+			$tindakan = TindakanOperasi::find($id);
+			if($tindakan==null){
+				$tindakan = new TindakanOperasi;
+			}
+			$tindakan->tindakan_operasi = strtoupper($request['tindakan']);
+		}elseif(strtolower(Auth::user()->role()->first()->name)=='radiologi'){
+			$tindakan = TindakanRadiologi::find($id);
+			if($tindakan==null){
+				$tindakan = new TindakanRadiologi;
+			}
+			$tindakan->tindakan_radiologi = strtoupper($request['tindakan']);
+		}
+		if($tindakan->save()){
+			return ['status'=>true];
+		}else{
+			return ['status'=>false];
+		}
+	}
+	
+	public function index()
+	{
+		if(strtolower(Auth::user()->role()->first()->name)=='rawatdarurat'){
+			return redirect('/tindakan/igd');
+		}
+		session()->forget(['dokter', 'pelaksana', 'perawat']);
+		$data['poli'] 			= Poli::select('nama', 'id')->where('politype', 'J')->get();
+		
+		if(session('poli_id')==0){
+			$data['registrasi'] = null;
+		}else{
+			// ->whereIn('posisi_pasien',['menunggu antrian','sedang diperiksa','rawat inap'])
+			$data['registrasi'] = Registrasi::where('poli_id',session('poli_id'))->where('status_reg', 'like', 'J%')->where('pulang',null)->get();
+		}
+		return view('tindakan::index', $data)->with('no', 1);
+	}
+
+	public function index_dokter()
+	{
+		if(strtolower(Auth::user()->role()->first()->name)=='rawatdarurat'){
+			return redirect('/tindakan/igd');
+		}
+		session()->forget(['dokter', 'pelaksana', 'perawat']);
+		$poli_dokter 			= db::table('pegawais')->where('id',Auth::user()->pegawai_id)->first();
+		$data['poli'] 			= Poli::select('nama', 'id')->where('politype', 'J')->where('id',$poli_dokter->poli_id)->get();
+		
+		if(session('poli_id')==0){
+			$data['registrasi'] = Registrasi::where('poli_id',$poli_dokter->poli_id)->where('status_reg', 'like', 'J%')->where('pulang',null)->get();
+		}else{
+			// ->whereIn('posisi_pasien',['menunggu antrian','sedang diperiksa','rawat inap'])
+			$data['registrasi'] = Registrasi::where('poli_id',session('poli_id'))->where('status_reg', 'like', 'J%')->where('pulang',null)->get();
+		}
+		return view('tindakan::index_dokter', $data)->with('no', 1);
+	}
+
+	public function index_byTanggal(Request $request)
+	{
+		if(strtolower(Auth::user()->role()->first()->name)=='rawatdarurat'){
+			return redirect('/tindakan/igd');
+		}
+		elseif(strtolower(Auth::user()->role()->first()->name)=='rawatjalan'){
+		session()->forget(['dokter', 'pelaksana', 'perawat']);
+		session(['poli_id' => $request['poli_id']]);
+		session(['ruang' => $request['ruang']]);
+		
+		$data['poli'] 			= Poli::select('nama', 'id')->where('politype', 'J')->get();
+		// ->whereIn('posisi_pasien',['menunggu antrian','sedang diperiksa','rawat inap'])
+		$data['registrasi'] = Registrasi::where('poli_id',$request['poli_id'])->where('status_reg', 'like', 'J%')->where('pulang',null)->get();
+		
+		return view('tindakan::index', $data)->with('no', 1);
+		}elseif(strtolower(Auth::user()->role()->first()->name)=='dokter'){
+			session()->forget(['dokter', 'pelaksana', 'perawat']);
+			session(['poli_id' => $request['poli_id']]);
+			session(['ruang' => $request['ruang']]);
+			
+			$data['poli'] 			= Poli::select('nama', 'id')->where('politype', 'J')->get();
+			// ->whereIn('posisi_pasien',['menunggu antrian','sedang diperiksa','rawat inap'])
+			$data['registrasi'] = Registrasi::where('poli_id',$request['poli_id'])->where('status_reg', 'like', 'J%')->where('pulang',null)->get();
+			
+			return view('tindakan::index_dokter', $data)->with('no', 1);
+		}else{
+		session()->forget(['dokter', 'pelaksana', 'perawat']);
+		session(['poli_id' => $request['poli_id']]);
+		session(['ruang' => $request['ruang']]);
+		
+		$data['poli'] 			= Poli::select('nama', 'id')->where('politype', 'J')->get();
+		// ->whereIn('posisi_pasien',['menunggu antrian','sedang diperiksa','rawat inap'])
+		$data['registrasi'] = Registrasi::where('poli_id',$request['poli_id'])->where('status_reg', 'like', 'J%')->where('pulang',null)->get();
+		
+		return view('tindakan::index', $data)->with('no', 1);
+		}
+		
+	}
+
+	public function tindakanIGD()
+	{
+		if(strtolower(Auth::user()->role()->first()->name)=='rawatjalan'||strtolower(Auth::user()->role()->first()->name)=='administrator'){
+			return redirect('/tindakan');
+		}elseif(strtolower(Auth::user()->role()->first()->name)=='rawatdarurat'||strtolower(Auth::user()->role()->first()->name)=='administrator'){
+			session()->forget(['dokter', 'pelaksana', 'perawat']);
+			// ->whereIn('posisi_pasien',['menunggu antrian','sedang diperiksa','rawat inap'])
+			$data['registrasi'] = Registrasi::where('status_reg', 'like', 'G%')->where('pulang',null)->get();
+			return view('tindakan::indexIGD', $data)->with('no', 1);
+		}else{
+			return redirect('/dashboard');
+		}
+		
+	}
+
+	public function tindakanIGD_byTanggal(Request $request)
+	{
+		if(strtolower(Auth::user()->role()->first()->name)=='rawatjalan'){
+			return redirect('/tindakan');
+		}
+		request()->validate(['tga'=>'required']);
+		session()->forget(['dokter', 'pelaksana', 'perawat']);
+		// ->whereIn('posisi_pasien',['menunggu antrian','sedang diperiksa','rawat inap'])
+		$data['registrasi'] = Registrasi::where('status_reg', 'like', 'G%')->where('pulang',null)->whereBetween('created_at', [valid_date($request['tga']).' 00:00:00', valid_date($request['tgb']).' 23:59:59'])->get();
+		return view('tindakan::indexIGD', $data)->with('no', 1);
+	}
+
+	public function ajax_tindakanIGD()
+	{
+		$data['registrasi'] = Registrasi::where('status_reg', 'like', 'G%')->where('pulang',null)->where('created_at', '>=', Carbon::now()->format('Y-m-d'))->get();
+		return view('tindakan::view_ajax', $data)->with('no', 1);
+	}
+
+	public function view_ajax()
+	{
+		//$data['registrasi'] = Registrasi::where('status_reg', 'like', 'J%')->where('pulang',null)->where('created_at', '>=', Carbon::now()->format('Y-m-d'))->get();
+		//return view('tindakan::view_ajax', $data)->with('no', 1);
+	}
+
+	public function search(Request $request)
+	{
+		request()->validate(['tga'=>'required']);
+		$tga = date("Y-m-d",strtotime($request['tga']));
+		$tgb = date("Y-m-d",strtotime($request['tgb']."+1 day"));
+		$data['registrasi'] = Registrasi::where('pulang',null)->whereBetween('created_at', [$tga, $tgb])->get();
+		return view('tindakan::index', $data)->with('no', 1);
+	}
+
+	public function get_data_histori_pemeriksaan_pasien($id)
+	{
+		DB::statement(DB::raw('set @rownum=0'));
+		$histori = Historipemeriksaanfisik::where('registrasi_id',$id)
+		->select([
+			DB::raw('@rownum  := @rownum  + 1 AS rownum'),
+			'tensi','suhu','berat','tinggi','status_gizi','anamnesis','keluhan_pasien','diagnosa_awal','diagnosa_akhir','created_at'
+		])->get();
+		return DataTables::of($histori)
+		->addColumn('tanggal', function ($data) {
+            
+            $btn = date('d F Y',strtotime($data->created_at));
+            return $btn;
+          })
+		->make(true);
+	}
+
+	public function entry($idreg, $idpasien)
+	{
+		if(strtolower(Auth::user()->role()->first()->name)=='rawatjalan' OR strtolower(Auth::user()->role()->first()->name)=='dokter' OR strtolower(Auth::user()->role()->first()->name)=='adminpoli' OR strtolower(Auth::user()->role()->first()->name)=='rawatdarurat' OR strtolower(Auth::user()->role()->first()->name)=='kamarbersalin' OR strtolower(Auth::user()->role()->first()->name)=='rawatinap' OR strtolower(Auth::user()->role()->first()->name)=='supervisor' OR strtolower(Auth::user()->role()->first()->name)=='administrator'){
+			$data['reg'] 						= Registrasi::where('id', '=', $idreg)->first();
+			$data['cek'] 						= Historipemeriksaanfisik::where('registrasi_id', '=', $idreg)->latest('created_at')->first();
+			$data['icd10']						= Icd10::select('nomor','nama')->get(); 
+			$data['data_pemeriksaan']			= db::table('data_surat_ket_sehat')->where('registrasi_id',$idreg)->orderByDesc('created_at')->first(); 
+			$data['pemeriksaan_object']			= db::table('histori_pemeriksaan_object')->where('registrasi_id',$idreg)->get(); 
+			if(in_array($data['reg']->posisi_pasien,['selesai pembayaran','selesai'])){
+				Flashy::warning('Pasien sudah pulang');
+				return back();
+			}
+			$persalinan = false;
+			$data['depo']			= strtolower(Auth::user()->role()->first()->name);
+			if(strtolower(Auth::user()->role()->first()->name)=='kamarbersalin'){
+				$data['folio'] 	= Folio::leftJoin('foliopelaksanas', 'folios.id', '=', 'foliopelaksanas.folio_id')
+													->where('folios.registrasi_id', $idreg)
+													->where('folios.poli_tipe', 'V')
+													->select('folios.*', 'foliopelaksanas.dokter_pelaksana', 'foliopelaksanas.dokter_lab', 'foliopelaksanas.dokter_radiologi', 'foliopelaksanas.dokter_anestesi', 'foliopelaksanas.analis_lab', 'foliopelaksanas.radiografer', 'foliopelaksanas.perawat', 'foliopelaksanas.dokter_visit', 'foliopelaksanas.dokter_anestesi', 'foliopelaksanas.dokter_anak', 'foliopelaksanas.dokter_operator1', 'foliopelaksanas.dokter_operator2', 'foliopelaksanas.perawat_ibs1', 'foliopelaksanas.perawat_ibs2', 'foliopelaksanas.perawat_ibs3', 'foliopelaksanas.perawat_ibs4', 'foliopelaksanas.bidan1', 'foliopelaksanas.bidan2')
+													->orderBy('folios.id','DESC')
+													->get();
+			}else{
+				$data['folio']	= Folio::leftJoin('foliopelaksanas', 'folios.id', '=', 'foliopelaksanas.folio_id')
+													->where('folios.registrasi_id', $idreg)
+													->whereNotIn('folios.jenis', ['PEM','EPO','ORI','ORJ','ORD','ORA'])
+													->select('folios.*', 'foliopelaksanas.dokter_pelaksana', 'foliopelaksanas.dokter_lab', 'foliopelaksanas.dokter_radiologi', 'foliopelaksanas.dokter_anestesi', 'foliopelaksanas.analis_lab', 'foliopelaksanas.radiografer', 'foliopelaksanas.perawat', 'foliopelaksanas.dokter_visit', 'foliopelaksanas.dokter_anestesi', 'foliopelaksanas.dokter_anak', 'foliopelaksanas.dokter_operator1', 'foliopelaksanas.dokter_operator2', 'foliopelaksanas.perawat_ibs1', 'foliopelaksanas.perawat_ibs2', 'foliopelaksanas.perawat_ibs3', 'foliopelaksanas.perawat_ibs4', 'foliopelaksanas.bidan1', 'foliopelaksanas.bidan2')
+													->orderBy('folios.id','DESC')
+													->get();
+			}
+			$data['pasien'] 	= Pasien::find($idpasien);
+			$data['reg_id'] 	= $idreg;
+			if(strtolower(Auth::user()->role()->first()->name)=='rawatinap' AND $data['reg']->posisi_pasien=='menunggu persalinan'){
+				return redirect('/rawat-inap/billing');
+			}
+			if(in_array($data['reg']->posisi_pasien,['menunggu antrian','rawat inap'])){
+				$data['reg']->posisi_pasien = 'sedang diperiksa';
+				$data['reg']->update();
+			}
+			if(strtolower(Auth::user()->role()->first()->name)=='dokter')
+			{
+				$data['dokter'] 	= Pegawai::where('kategori_pegawai', 1)->where('id',Auth::user()->pegawai_id)->select('nama', 'id')->get();
+			}else{
+				$data['dokter'] 	= Pegawai::where('kategori_pegawai', 1)->select('nama', 'id')->get();
+			}
+			if($data['reg']->posisi_pasien=='menunggu persalinan'){
+				$data['bidan'] 	= Pegawai::whereIn('kategori_pegawai', [3])->select('nama', 'id')->get();
+				$persalinan = true;
+			}else{
+				$data['perawat'] 	= Pegawai::whereIn('kategori_pegawai', [2,3])->select('nama', 'id')->get();
+			}
+			$jenis = $data['reg']->status_reg;
+			$dokter_log = Pegawai::where('id', Auth::user()->pegawai_id)->first();
+			$data['poli'] =  Poli::where('id',$dokter_log->poli_id)->first();
+			$data['Master_Jenis_Alergi'] = MasterJenisAlergi::all();
+			$data['Master_Alergi'] = MasterAlergi::all();
+			if(substr($jenis, 0, 1) == 'G'){
+				$kat = [1];
+				if($data['reg']->poli->nama=='Triage Kebidanan'){
+					$kat = [1,5];
+				}
+				session(['jenis' => 'TG']);
+				$data['tindakan'] = Tarif::whereIn('kategoriheader_id',$kat)->orWhere(function($q){ $q->where('nama', 'like', '%Glukosa Darah - Sewaktu%')->where('kategoriheader_id',1); })->get();
+			}elseif(substr($jenis, 0, 1) == 'J'){
+				session(['jenis' => 'TA']);
+				$kat_header = 1;
+				if(strtolower(Auth::user()->role()->first()->name)=='fisioterapi'){
+					$kat_header = 7;
+				}elseif(strtolower(Auth::user()->role()->first()->name)=='laboratorium'){
+					$kat_header = 2;
+				}elseif(strtolower(Auth::user()->role()->first()->name)=='radiologi'){
+					$kat_header = 3;
+				}
+				$data['tindakan'] = Tarif::where('kategoriheader_id',$kat_header)->whereIn('poli',[Registrasi::find($idreg)->poli_id,15])->orWhere(function($q){ $q->where('nama', 'like', '%Glukosa Darah - Sewaktu%')->where('kategoriheader_id',1); })->get();
+			}elseif (substr($jenis, 0, 1) == 'I'){
+				session(['jenis' => 'TI']);
+				session(['hak_kelas_inap' => $data['reg']->hak_kelas_inap]);
+				$data['irna'] 		= Rawatinap::where('registrasi_id', $idreg)->first();
+				if($data['irna']==null){
+					return back();
+				}
+				
+				if($persalinan OR ($data['reg']->poli->nama=='Triage Kebidanan')){
+					$data['tindakan'] = Tarif::whereIn('kategoriheader_id',[1,5])->orWhere(function($q){ $q->where('nama', 'like', '%Glukosa Darah - Sewaktu%')->where('kategoriheader_id',1); })->get();
+				}else{
+					$data['tindakan'] = Tarif::where('kategoriheader_id',1)->orWhere(function($q){ $q->where('nama', 'like', '%Glukosa Darah - Sewaktu%')->where('kategoriheader_id',1); })->get();
+				}
+			}
+			
+			$data['bayi'] = Pasien::join('registrasis','pasiens.id','=','registrasis.pasien_id')
+											->where('pasiens.id_orangtua',$data['reg']->pasien_id)
+											->where('registrasis.pulang',null)
+											->selectRaw('registrasis.id, registrasis.reg_id, registrasis.berat_badan, registrasis.tekanan_darah, registrasis.diagnosa_akhir, pasiens.id as pasien_id, pasiens.nama, pasiens.kelamin, pasiens.no_rm')
+											->get();
+			if($persalinan){
+				$data['group_tindakan'] = Mastermappingbiaya::where('kategoritarif_id', 5)->get();
+			}else{
+				$data['group_tindakan'] = Mastermappingbiaya::where('kategoritarif_id', 1)->get();
+				//$data['bayi'] = [];
+			}
+			
+			// PEMAKAIAN OBAT
+			$data['data_racikan_epo'] = null;
+			$data['data_racikan_resep'] = null;
+			$data['permintaan_id'] = 0;
+			$data['penjualan_id'] = 0;
+			$data['status_upd_epo']	= true;
+			$data['status_upd_resep']	= false;
+			$data['penjualan'] 	= Penjualan::where('registrasi_id' ,$idreg)->first();
+			$data['permintaan'] = Permintaanobat::where('registrasi_id' ,$idreg)->first();
+			if($data['penjualan']!=null){
+				$data['penjualan_id'] = $data['penjualan']->id;
+				$data['data_racikan_resep'] = Penjualandetail::join('obat_racikan', 'penjualandetails.obat_racikan_id', '=', 'obat_racikan.id')->where('penjualan_id', '=', $data['penjualan']->id)->groupBy('penjualandetails.obat_racikan_id')->get();
+				if($data['penjualan']->status!='selesai'){
+					$data['status_upd_resep']	= true;	
+				}
+			}else{
+				$data['status_upd_resep']	= true;
+			}
+			if($data['permintaan']!=null){
+				$data['permintaan_id'] = $data['permintaan']->id;
+				$data['data_racikan_epo'] = Permintaanobatdetail::join('obat_racikan', 'permintaan_obat_details.obat_racikan_id', '=', 'obat_racikan.id')->where('permintaan_id', '=', $data['permintaan']->id)->groupBy('permintaan_obat_details.obat_racikan_id')->get();
+			}
+			$data['operasi'] 	= Operasi::where('registrasi_id' ,$idreg)->get();
+			$data['tiket'] 		= MasterEtiket::get();
+			$data['takaran'] 	= TakaranobatEtiket::pluck('nama','nama');
+			$data['aturan'] 	= Aturanetiket::pluck('aturan', 'aturan');
+			$data['satuan'] 	= Satuanjual::pluck('nama', 'nama');
+			$data['jenis_racikan'] 	= Jenisracikan::pluck('jenis_racikan', 'jenis_racikan');
+			if(strtolower(Auth::user()->role()->first()->name)=='rawatdarurat')
+			{
+				$data['kondisi'] 	= KondisiAkhirPasien::pluck('namakondisi', 'id');
+			}else{
+				$data['kondisi'] 	= KondisiAkhirPasien::whereNotIn('id',[7])->pluck('namakondisi', 'id');
+			}
+			$data['no'] 			= 1;
+			if(strtolower(Auth::user()->role()->first()->name)=='dokter' or strtolower(Auth::user()->role()->first()->name)=='adminpoli')
+			{
+			return view  ('tindakan::entry_tindakan_dokter', $data)->with('no', 1)->with('idreg', $idreg)->with('persalinan',$persalinan);
+			}else{
+			return view  ('tindakan::entry_tindakan', $data)->with('no', 1)->with('idreg', $idreg)->with('persalinan',$persalinan);
+			}
+			
+		}else{
+			return redirect('dashboard');
+		}
+	}
+
+	public function saveTindakan(Request $request)
+	{
+		if(strtolower(Auth::user()->role()->first()->name)=='rawatjalan' OR strtolower(Auth::user()->role()->first()->name)=='dokter' OR strtolower(Auth::user()->role()->first()->name)=='rawatdarurat' OR strtolower(Auth::user()->role()->first()->name)=='rawatinap' OR strtolower(Auth::user()->role()->first()->name)=='kamarbersalin' OR strtolower(Auth::user()->role()->first()->name)=='supervisor' OR strtolower(Auth::user()->role()->first()->name)=='administrator'){
+			$reg = Registrasi::find($request['registrasi_id']);
+			if($reg->posisi_pasien=='selesai'){
+				Flashy::warning('Pasien sudah pulang');
+				return back();
+			}
+			if($request['tarif_id']=="" AND $request['group_id']==""){
+				Flashy::error('Harap memilih group / tindakan');			
+			}else{
+				$idx = [];
+				if($request['tarif_id']!=""){
+					array_push($idx, $request['tarif_id']);
+				}
+				if($request['group_id']!=""){
+					$cek_mapping = Tarif::where('mapping_biaya_id', '!=', null)->get();
+					if($cek_mapping!=null){
+						foreach($cek_mapping as $key => $data){
+							$var = json_decode($data->mapping_biaya_id);
+							if(in_array($request['group_id'], $var)){
+								array_push($idx, $data->id);
+							}
+						}
+					}
+				}
+				$fol = null;
+				foreach($idx as $id_tarif){
+					$tarif = Tarif::find($id_tarif);
+					$fol = new Folio();
+					$fol->registrasi_id = $request['registrasi_id'];
+					if($reg->supervisor_edit==1){
+						$fol->lunas         = 'Y';
+					}else{
+						$fol->lunas         = 'N';
+					}
+					$fol->namatarif     = $tarif->nama;
+					$fol->tarif_id      = $id_tarif;
+					$fol->cara_bayar_id = $reg->bayar;
+					if(substr($tarif->nama,0,23) == 'Glukosa Darah - Sewaktu'){
+						$fol->poli_tipe = 'L';
+						$fol->jenis     = "TA";
+					}elseif(substr($reg->status_reg,0,1) == 'G'){
+						$fol->poli_tipe = 'G';
+						$fol->jenis     = "TG";
+					}elseif(substr($reg->status_reg,0,1) == 'I'){
+						if(strtolower(Auth::user()->role()->first()->name)=='kamarbersalin'){
+							$fol->jenis     = "TI";
+							$fol->poli_tipe = 'V';
+						}else{
+							$fol->jenis     = "TI";
+							$fol->poli_tipe = 'I';
+						}
+					}else{
+						$fol->jenis     = "TA";
+						$fol->poli_tipe = 'J';
+					}
+					if($reg->bayi==1 AND $reg->bayi_sakit==null){ 
+						$ibu_pasien = Registrasi::where('pasien_id',$reg->pasien->id_orangtua)->where('pulang',null)->first();
+						$fol->total       = (getTotalTarif($ibu_pasien,$tarif) * $request['jumlah']) * 50 / 100;
+					}else{
+						$fol->total       = (getTotalTarif($reg,$tarif) * $request['jumlah']);
+					}
+					if(substr($reg->status_reg,0,1) == 'G'){
+						$fol->total       = (getTotalTarif($reg,$tarif) * $request['jumlah'])*2;
+					}elseif($reg->poli_id==24){
+						$fol->total       = (getTotalTarif($reg,$tarif) * $request['jumlah'])*2;
+					}
+					$fol->jenis_pasien  = $request['jenis'];
+					$fol->pasien_id     = $request['pasien_id'];
+					$fol->dokter_id     = $request['dokter_id'];
+					$fol->user_id       = Auth::user()->id;
+					$fol->poli_id       = $request['poli_id'];
+					if(!empty($request['tanggal'])) {
+						$fol->created_at = valid_date($request['tanggal']).' '.date('H:i:s');
+					}
+					$fol->save();					
+
+					//Update Reg Status
+					if(substr($reg->status_reg,0,1) == 'G'){
+						$reg->status_reg = 'G2';
+					}elseif(substr($reg->status_reg,0,1) == 'J'){
+						$reg->status_reg = 'J2';
+					}
+					$reg->update();
+
+					//input folio pelaksana
+					$fp = new Foliopelaksana();
+					$fp_tambahan = new Foliopelaksana_tambah();
+					$fp->folio_id = $fol->id;
+					$fp_tambahan->folio_id = $fol->id;
+					$fp->dpjp = $request['dokter_id'];
+					$fp_tambahan->dpjp = $request['dokter_id'];
+					if($request['pelaksana_tindakan']=='dokter')
+					{
+						$fp_tambahan->pelaksana = $request['pelaksana'];
+					}else{
+						$fp_tambahan->pelaksana = $request['perawat'];
+					}
+					
+					if($reg->posisi_pasien=='menunggu persalinan'){
+						if(substr($tarif->nama,-17)=='Dokter - Tindakan'){
+							$fp->dokter_pelaksana = $request['pelaksana'];
+						}else{
+							$fp->dokter_pelaksana = null;
+						}
+					}else{
+						$fp->dokter_pelaksana = $request['pelaksana'];
+					}
+					$fp->perawat = $request['perawat'];
+					if(substr($reg->status_reg,0,1) == 'G'){
+						$fp->pelaksana_tipe = 'TG';
+						$fp_tambahan->pelaksana_tipe = 'TG';
+					}elseif(substr($reg->status_reg,0,1) == 'I'){
+						$fp->pelaksana_tipe = 'TI';
+						$fp_tambahan->pelaksana_tipe = 'TI';
+					}else{
+						$fp->pelaksana_tipe = 'TA';
+						$fp_tambahan->pelaksana_tipe = 'TA';
+					}
+					if(isset($request['dokter_visit'])){
+						$fp->dokter_visit = $request['dokter_visit'];
+					}
+					if($reg->posisi_pasien=='menunggu persalinan'){
+						$fp->bidan1 = $request['bidan1'];
+						$fp->bidan2 = $request['bidan2'];
+						$fp->dokter_anak = $request['dokter_anak'];
+						session(['dokter_anak'=>$request['dokter_anak'], 'bidan1'=>$request['bidan1'], 'bidan2'=>$request['bidan2']]);
+					}
+					$fp->user = Auth::user()->id;
+					$fp_tambahan->user = Auth::user()->id;
+					$fp->save();
+					$fp_tambahan->save();
+
+
+				}
+				if($fol!=null){
+					// Insert Kunjungan IRJ
+					if ($fol->poli_tipe == 'J') {
+						$cek = HistorikunjunganIRJ::where('registrasi_id', $request['registrasi_id'])->where('poli_id', $request['poli_id'])->count();
+						if($cek < 1) {
+							$rj = new HistorikunjunganIRJ();
+							$rj->registrasi_id = $request['registrasi_id'];
+							$rj->pasien_id = $request['pasien_id'];
+							$rj->poli_id = $request['poli_id'];
+							$rj->user = Auth::user()->id;
+							$rj->save();
+						}
+					}
+
+					// Insert Kunjungan IRD
+					if ($fol->poli_tipe == 'G') {
+						$cek = HistorikunjunganIGD::where('registrasi_id', $request['registrasi_id'])->where('triage_nama', baca_poli($request['poli_id']))->count();
+						if($cek < 1) {
+							$rj = new HistorikunjunganIGD();
+							$rj->registrasi_id = $request['registrasi_id'];
+							$rj->pasien_id = $request['pasien_id'];
+							$rj->triage_nama = baca_poli($request['poli_id']);
+							$rj->user = Auth::user()->id;
+							$rj->save();
+						}
+					}
+					// Insert Histori
+					$history = new HistoriStatus();
+					$history->registrasi_id = $request['registrasi_id'];
+					if(substr($reg->status_reg,0,1) == 'G'){
+						$history->status = 'G2';
+					}elseif (substr($reg->status_reg,0,1) == 'I') {
+						$history->status = 'I2';
+					}elseif (substr($reg->status_reg,0,1) == 'J') {
+						$history->status = 'J2';
+					}
+					$history->poli_id       = $request['poli_id'];
+					$history->bed_id        = null;
+					$history->user_id       = Auth::user()->id;
+					$history->save();
+				}else{
+					Flashy::warning('Mohon cek group tindakan, bisa jadi tindakan masih kosong');
+				}
+
+				session(['pelaksana' => $request['pelaksana'], 'perawat' => $request['perawat']]);
+				session()->forget('jenis');
+			}
+			return redirect('tindakan/entry/'.$request['registrasi_id'].'/'.$request['pasien_id']);
+		}else{
+			return redirect('dashboard');
+		}
+  }
+
+	public function kondisi_akhir_pasien(Request $request)
+	{
+    $reg = Registrasi::find($request['registrasi_id']);
+		if($reg->posisi_pasien=='menunggu persalinan' AND $reg->supervisor_edit!=1){
+			$reg->posisi_pasien = 'rawat inap';
+			$reg->update();
+			return redirect('tindakan/entry/'.$request['registrasi_id'].'/'.$reg->pasien_id);
+		}else{
+			if(strtolower(Auth::user()->role()->first()->name)=='supervisor' AND $reg->supervisor_edit==1){
+				$reg->posisi_pasien = 'selesai';
+				$reg->pulang=1;
+				$reg->supervisor_edit=null;
+				$reg->supervisor_at=date('Y-m-d H:i:s');
+				$reg->status_reg = $request['status_reg'].'3';
+				
+				$total_tagihan = total_tagihan($reg->id,'Y');
+				$pembayaran = Pembayaran::where('registrasi_id',$reg->id)->first();
+				if($total_tagihan > $pembayaran->total){
+					$pembayaran->selisih_negatif = $total_tagihan - $pembayaran->total;
+				}else{
+					$pembayaran->selisih_positif = $pembayaran->total - $total_tagihan;
+				}
+				$pembayaran->total = $total_tagihan;
+				$pembayaran->update();
+			}else{
+				$kondisi = request()->validate(['kondisi_akhir_pasien' => 'required']);
+				$reg->kondisi_akhir_pasien = $request['kondisi_akhir_pasien'];
+				if($request['status_reg'] == 'G'){
+					$reg->status_reg = 'G2';
+					$reg->cara_keluar_inap = $request['kondisi_akhir_pasien'];
+				}elseif($request['status_reg'] == 'J'){
+					$reg->status_reg = 'J2';
+					$reg->cara_keluar_inap = $request['kondisi_akhir_pasien'];
+				}elseif($request['status_reg'] == 'I'){
+					$reg->status_reg = 'I2';
+					$reg->cara_keluar_inap = $request['kondisi_akhir_pasien'];
+				}
+				if(substr($reg->status_reg,0,1)=='I' AND $reg->antrian_apotek_id==null){
+					$kelompok = 'C';
+					$get_resep = Penjualan::where('registrasi_id',$reg->id)->first();
+					if($get_resep!=null){
+						$cek_detail_resep = Penjualandetail::where('penjualan_id',$get_resep->id)->where('hapus',null)->get();
+						if(count($cek_detail_resep)>0){
+							$get_resep_dtl = Penjualandetail::where('penjualan_id',$get_resep->id)->where('hapus',null)->where('status_racikan',1)->get();
+							if(count($get_resep_dtl)>0){
+								$kelompok = 'D';
+							}
+						}else{
+							$kelompok = 'E';
+						}
+					}else{
+						$kelompok = 'E';
+					}
+					$count = AntrianApotek::where('tanggal', '=', date('Y-m-d'))->where('kelompok',$kelompok)->count();
+					$create_antrian = new AntrianApotek;
+					$nomor = $count + 1;
+					$create_antrian->nomor	=	$nomor;
+					$create_antrian->suara	=	$nomor.'.mp3';
+					$create_antrian->status	=	0;
+					$create_antrian->panggil	=	0;
+					$create_antrian->tanggal	=	date('Y-m-d');
+					$create_antrian->kelompok	=	$kelompok;
+					$create_antrian->registrasi_id	=	$reg->id;
+					if($create_antrian->save()){
+						$reg->antrian_apotek_id = $create_antrian->id;
+						if($kelompok == 'E'){
+							db::table('beds')->join('rawatinaps','rawatinaps.bed_id','=','beds.id')->where('rawatinaps.registrasi_id',$reg->id)->update([
+								'reserved'=>'AP',
+							]);
+							$reg->posisi_pasien = 'konfirmasi farmasi';
+						}else{
+							$reg->posisi_pasien = 'antrian apotek';
+						}					
+					}
+				}else{
+					if($reg->antrian_apotek_id==null){
+						$reg->posisi_pasien = 'selesai diperiksa';
+					}
+				}
+			}
+			if($reg->update()){
+				Flashy::success('Pasien selesai diperiksa');
+			}else{
+				Flashy::warning('Data gagal disimpan');
+			}
+				
+			if(strtolower(Auth::user()->role()->first()->name)=='supervisor'){
+				return redirect('frontoffice/histori-pasien/'.$reg->pasien_id);
+			}elseif(strtolower(Auth::user()->role()->first()->name)=='fisioterapi'){
+				return redirect('penunjang/tindakan-pasien');
+			}elseif(strtolower(Auth::user()->role()->first()->name)=='laboratorium'){
+				return redirect('laboratorium/tindakan-pasien');
+			}elseif(strtolower(Auth::user()->role()->first()->name)=='radiologi'){
+				return redirect('radiologi/tindakan-pasien');
+			}elseif($request['status_reg'] == 'G'){
+				//if($request['kondisi_akhir_pasien']=='6')
+			//	{
+				//	return redirect()->route('tindakan.igd')+redirect('/surat_pulang_paksa/'.$request['registrasi_id']);
+		
+				//}else{
+					return redirect()->route('tindakan.igd');
+				//}
+				
+			}elseif($request['status_reg'] == 'I'){
+				//if($request['kondisi_akhir_pasien']=='6')
+			//	{
+			//		return redirect('rawat-inap/billing')+ redirect('/surat_pulang_paksa/'.$request['registrasi_id']);
+					
+			//	}else{
+					return redirect('rawat-inap/billing');
+				//}
+				
+			}else{
+				//if($request['kondisi_akhir_pasien']=='6')
+				//{
+				//	return redirect()->route('tindakan').redirect('/surat_pulang_paksa/'.$request['registrasi_id']);;
+					
+				//}else{
+					if(strtolower(Auth::user()->role()->first()->name)=='dokter'){
+						return redirect('tindakan/dokter');
+						}else{
+						return redirect()->route('tindakan');		
+						}
+					
+				//}
+			}
+		}
+  }
+
+	public function ubahStatusUGD($registrasi_id, $status_ugd)
+	{
+    $ugd = Registrasi::find($registrasi_id);
+    $ugd->status_ugd = $status_ugd;
+    $ugd->update();
+    if($ugd) {
+      return response()->json(['sukses' => true]);
+    } else {
+      return response()->json(['sukses' => false]);
+    }
+  }
+	
+	/* public function editTindakan($folio_id){
+		$folio = Folio::join('foliopelaksanas', 'folios.id', '=', 'foliopelaksanas.folio_id')
+						->where('folios.id', $folio_id)
+						->select('folios.*', 'foliopelaksanas.dpjp', 'foliopelaksanas.dokter_pelaksana', 'foliopelaksanas.perawat')
+						->first();
+		$dokter = Rawatinap::where('registrasi_id', $folio->registrasi_id)->first();
+		return response()->json(['folio' => $folio, 'dokter'=>$dokter]);
+	}
+
+	public function saveEditTindakan(Request $request){
+		DB::transaction(function () use ($request) {
+		  $tarif = Tarif::find($request['edit_tarif_id']);
+			$fol = Folio::find($request['edit_folio_id']);
+			$fol->registrasi_id = $request['edit_registrasi_id'];
+			$fol->namatarif = $tarif->nama;
+			$fol->tarif_id = $request['edit_tarif_id'];
+			$fol->total = ($tarif->total * $request['jumlah']);
+			if (!empty($request['tanggal'])) {
+				$fol->created_at = valid_date($request['tanggal']);
+			}
+			$fol->user_id = Auth::user()->id;
+			$fol->update();
+			
+			
+			if(strtolower(Auth::user()->role()->first()->name)=='rawatdarurat'){
+				$poli_tipe = 'TG';
+			}elseif(strtolower(Auth::user()->role()->first()->name)=='rawatinap'){
+				$poli_tipe = 'TI';
+			}else{
+				$poli_tipe = 'TA';
+			}
+		
+			$fp = Foliopelaksana::where('folio_id', $fol->id)->first();
+			$fp->dpjp = $request['edit_dpjp'];
+			$fp->dokter_pelaksana = $request['edit_pelaksana'];
+			$fp->perawat = $request['edit_perawat'];
+			$fp->pelaksana_tipe = $poli_tipe;
+			$fp->user = Auth::user()->id;
+			$fp->update();
+		});
+		return response()->json(['sukses' => true]);
+	} */
+	
+	public function hapusTindakan($id, $idreg, $pasien_id, $order=''){
+    if(Auth::user()->hasRole(['operasi','rawatinap','rawatjalan','kasir','kamarbersalin','supervisor', 'rawatdarurat','administrator'])){
+			$lunas = 'N';
+			if(Auth::user()->hasRole(['supervisor'])){
+				$lunas = 'Y';
+			}
+      if(Folio::where('id',$id)->where('lunas', $lunas)->delete()){
+				Foliopelaksana::where('folio_id',$id)->delete();
+				Foliopelaksana_tambah::where('folio_id',$id)->delete();
+				Flashy::success('Tindakan berhasil dihapus');
+			}else{
+				Flashy::error('Tindakan gagal dihapus');
+			}
+    }
+		if($order=='order'){
+			return redirect('operasi/tindakan/'.$idreg);
+		}else{
+			return redirect('tindakan/entry/'.$idreg.'/'.$pasien_id);
+		}
+  }
+
+	public function getTarif($kategoritarif_id='')
+	{
+    $tarif = Tarif::where('kategoritarif_id', '=', $kategoritarif_id)->where('jenis', session('jenis'))->where('total', '<>', 0)->select('nama', 'id', 'total')->get();
+    return response()->json($tarif);
+  }
+
+	//VERIFIKASI TINDAKAN RJ/RD
+	public function verifikasiRJ()
+	{
+    $data['registrasi'] = Registrasi::where('lunas', 'N')
+                                    ->where('verif_rj', 'N')
+                                    ->whereIn('status_reg', ['J1', 'J2', 'G1', 'G2'])
+                                    ->where('created_at', 'like', date('Y-m-d').'%')->get();
+    return view('kasir.verifikasiRJ.verifikasiRJ', $data)->with('no', 1);
+  }
+
+	public function detailVerifikasiRJ($registrasi_id)
+	{
+		$data['registrasi'] = Registrasi::select('id', 'pasien_id', 'status_reg', 'dokter_id', 'poli_id', 'bayar')->where('id', $registrasi_id)->first();
+		$data['pasien'] = Pasien::find($data['registrasi']->pasien_id);
+		$data['folio'] = Folio::where('registrasi_id', $registrasi_id)->where('verif_rj', 'N')->get();
+		return view('kasir.verifikasiRJ.detailVerifikasiRJ', $data)->with(['no'=>1, 'baris'=>1]);
+	}
+
+	public function saveVerifikasiRJ(Request $request)
+	{
+		$jumlah = $request['jmlbaris'];
+		$jml = [];
+		for ($i=1; $i < $jumlah; $i++) {
+		  if (!empty($request['verif_rj'.$i])) {
+			$fol = Folio::where('id', $request['verif_rj'.$i])->first();
+			$fol->verif_rj = 'Y';
+			$fol->verif_rj_user = Auth::user()->name;
+			$fol->update();
+
+			$reg = Registrasi::find($fol->registrasi_id);
+			$reg->verif_rj = 'Y';
+			$reg->update();
+			array_push($jml, $fol->id);
+		  }
+		}
+		$data = Folio::whereIn('id', $jml)->get();
+		$pesan = $data->count().' tindakan berhasil di verifikasi';
+		Flashy::success($pesan);
+		return response()->json(['sukses' => true]);
+	}
+	
+	// ORDER
+	public function laboratorium($layanan = '', $registrasi_id = '') {
+		$data['reg']	 		= Registrasi::where('id', $registrasi_id)->first();
+		$data['order'] 		= Orderlab::where('registrasi_id', $registrasi_id)->get();
+		
+		$data['layanan']	= '';
+		$data['tipe']			= '';
+		if($layanan=='irj'){
+			$data['layanan']	= 'Jalan';
+			$data['tipe']			= 'TA';
+		}elseif($layanan=='darurat'){
+			$data['layanan']	= 'Darurat';
+			$data['tipe']			= 'TG';
+		}elseif($layanan=='irna'){
+			$data['layanan']	= 'Inap';
+			$data['tipe']			= 'TI';
+		}
+		$data['depo']			= 'laboratorium';
+    $data['jenis'] 		= Registrasi::where('id', '=', $registrasi_id)->first();
+    $data['pasien'] 	= Pasien::find($data['jenis']->pasien_id);
+		$data['dokter'] 	= Pegawai::where('kategori_pegawai', 1)->pluck('nama', 'id');
+		$data['perawat'] 	= Pegawai::whereNotIn('kategori_pegawai', [1])->pluck('nama', 'id');
+    $data['opt_poli'] = Poli::where('politype', 'L')->get();
+		$data['folio']		= Folio::leftJoin('foliopelaksanas', 'folios.id', '=', 'foliopelaksanas.folio_id')
+												->where('folios.registrasi_id', $registrasi_id)
+												->where('folios.poli_tipe', 'L')
+												->select('folios.*', 'foliopelaksanas.dokter_lab','foliopelaksanas.analis_lab')
+												->get();
+		return view('rawat-jalan.laboratorium', $data)->with('no', 1)->with('idreg', $registrasi_id);
+	}
+	public function simpan_laboratorium(Request $request) {
+		request()->validate(['pemeriksaan' => 'required']);
+		$lab = new Orderlab();
+		$lab->registrasi_id = $request['registrasi_id'];
+		$lab->pemeriksaan = $request['pemeriksaan'];
+		$lab->user_id = Auth::user()->id;
+		$lab->save();
+		$reg = Registrasi::find($request['registrasi_id']);
+		Flashy::success('Pendaftaran Laboratorium Sukses');		
+		return redirect('/tindakan/entry/'.$reg->id.'/'.$reg->pasien_id);
+		
+		/* if($request['instalasi']=='Darurat'){
+			return redirect('/tindakan/igd');
+		}elseif($request['instalasi']=='Inap'){
+			return redirect('/rawat-inap/billing');
+		}else{
+			return redirect('/tindakan');
+		} */
+	}
+	
+	public function radiologi($layanan = '', $registrasi_id = '') {
+		$data['reg'] 		= Registrasi::where('id', $registrasi_id)->first();
+		$data['order'] 	= Orderradiologi::where('registrasi_id', $registrasi_id)->get();
+		$data['tindakanradiologi'] 	= TindakanRadiologi::join('mastermapping_biaya', 'mastermapping_biaya.tindakan_radiologi_id', '=', 'tindakan_radiologi.id')
+											->select('mastermapping_biaya.id','mastermapping_biaya.kelompok','mastermapping_biaya.tindakan_radiologi_id')
+											->get();
+		
+		$data['layanan']	= '';
+		$data['tipe']			= '';
+		if($layanan=='irj'){
+			$data['layanan']	= 'Jalan';
+			$data['tipe']			= 'TA';
+		}elseif($layanan=='darurat'){
+			$data['layanan']	= 'Darurat';
+			$data['tipe']			= 'TG';
+		}elseif($layanan=='irna'){
+			$data['layanan']	= 'Inap';
+			$data['tipe']			= 'TI';
+		}
+		$data['jenis'] 		= Registrasi::where('id', '=', $registrasi_id)->first();
+		$data['pasien'] 	= Pasien::find($data['jenis']->pasien_id);
+		$data['depo']			= 'radiologi';
+		$data['dokter'] 	= Pegawai::where('kategori_pegawai', 1)->pluck('nama', 'id');
+		$data['perawat'] 	= Pegawai::whereNotIn('kategori_pegawai', [1])->pluck('nama', 'id');
+		$data['opt_poli'] = Poli::where('politype', 'R')->get();
+		$data['detil_order']	= DataOrderRadiologi::where('registrasi_id',$registrasi_id)->get();
+		$data['folio'] 		= Folio::join('foliopelaksanas', 'folios.id', '=', 'foliopelaksanas.folio_id')
+											->where('registrasi_id', $registrasi_id)
+											->whereNotIn('folios.jenis', ['PEM'])
+											->select('folios.*', 'foliopelaksanas.dokter_radiologi','foliopelaksanas.radiografer')
+											->where('poli_tipe', 'R')->get();
+		return view('rawat-jalan.radiologi', $data)->with('no', 1)->with('idreg', $registrasi_id);
+	}
+	public function simpan_radiologi(Request $request) {
+		request()->validate(['pemeriksaan' => 'required']);
+		$lab = new Orderradiologi();
+		$lab->registrasi_id = $request['registrasi_id'];
+		$lab->pemeriksaan = $request['pemeriksaan'];
+		$lab->user_id = Auth::user()->id;
+		$lab->save();
+		$reg = Registrasi::find($request['registrasi_id']);
+		Flashy::success('Pendaftaran Radiologi Sukses');			
+		return redirect('/tindakan/entry/'.$reg->id.'/'.$reg->pasien_id);	
+		/* if($request['instalasi']=='Darurat'){
+			return redirect('/tindakan/igd');
+		}elseif($request['instalasi']=='Inap'){
+			return redirect('/rawat-inap/billing');
+		}else{
+			return redirect('/tindakan');
+		} */
+	}
+	
+	public function penunjang($penunjang='', $layanan = '', $registrasi_id = '') {
+		$data['reg'] 		= Registrasi::where('id', $registrasi_id)->first();
+		$data['penunjang']= $penunjang;
+		$poli_tipe = '';
+		if($penunjang=='fis'){
+			$data['order'] 	= Orderfisioterapi::where('registrasi_id', $registrasi_id)->get();
+			$poli_tipe = 'F';
+			$data['depo']			= 'fisioterapi';
+			$data['header']		= 'Fisioterapi';
+		}elseif($penunjang=='vk'){
+			$data['order'] 	= Orderkamarbersalin::where('registrasi_id', $registrasi_id)->get();
+			$poli_tipe = 'V';
+			$data['depo']			= 'kamarbersalin';
+			$data['header']		= 'Persalinan';
+		}
+		
+		$data['layanan']	= '';
+		$data['tipe']			= '';
+		if($layanan=='irj'){
+			$data['layanan']	= 'Jalan';
+			$data['tipe']			= 'TA';
+		}elseif($layanan=='darurat'){
+			$data['layanan']	= 'Darurat';
+			$data['tipe']			= 'TG';
+		}elseif($layanan=='irna'){
+			$data['layanan']	= 'Inap';
+			$data['tipe']			= 'TI';
+		}
+		$data['jenis'] 		= Registrasi::where('id', '=', $registrasi_id)->first();
+		$data['pasien'] 	= Pasien::find($data['jenis']->pasien_id);
+		$data['dokter'] 	= Pegawai::where('kategori_pegawai', 1)->pluck('nama', 'id');
+		$data['perawat'] 	= Pegawai::whereNotIn('kategori_pegawai', [1])->pluck('nama', 'id');
+		$data['opt_poli'] = Poli::where('politype', $poli_tipe)->get();
+		$data['folio'] 		= Folio::join('foliopelaksanas', 'folios.id', '=', 'foliopelaksanas.folio_id')
+											->where('registrasi_id', $registrasi_id)
+											->whereNotIn('folios.jenis', ['PEM'])
+											->select('folios.*')
+											->where('poli_tipe', $poli_tipe)->get();
+		$kategori_tarif		= Kategoritarif::where('namatarif', $data['header'])->first();
+		$data['kat_tarif']= 0;
+		if($kategori_tarif!=null){
+			$data['kat_tarif'] = $kategori_tarif->id;
+		}
+		return view('penunjang.penunjang', $data)->with('no', 1)->with('idreg', $registrasi_id);
+	}
+	public function simpan_penunjang(Request $request) {
+		request()->validate(['pemeriksaan' => 'required']);
+		if($request['penunjang']=='Fisioterapi'){
+			$insert = new Orderfisioterapi();
+		}elseif($request['penunjang']=='Persalinan'){
+			$insert = new Orderkamarbersalin();
+		}
+		$insert->registrasi_id = $request['registrasi_id'];
+		$insert->pemeriksaan = $request['pemeriksaan'];
+		$insert->user_id = Auth::user()->id;
+		$insert->save();
+		$reg = Registrasi::find($request['registrasi_id']);
+		Flashy::success('Pendaftaran sukses');
+		return redirect('/tindakan/entry/'.$reg->id.'/'.$reg->pasien_id);	
+		/* if($request['instalasi']=='Darurat'){
+			return redirect('/tindakan/igd');
+		}elseif($request['instalasi']=='Inap'){
+			return redirect('/rawat-inap/billing');
+		}else{
+			return redirect('/tindakan');
+		} */
+	}
+
+	//pemeriksaan object
+	public function simpan_pemeriksaan_object(Request $request)
+	{
+		$cek = db::table('histori_pemeriksaan_object')->where('registrasi_id',$request['registrasi_id'])->where('kategori_pemeriksaan',$request['kategori_pemeriksaan'])->count();
+		if($cek<1)
+		{
+			db::table('histori_pemeriksaan_object')->insert([
+				'registrasi_id'=>$request['registrasi_id'],
+				'pasien_id'=>$request['pasien_id'],
+				'kategori_pemeriksaan'=>$request['kategori_pemeriksaan'],
+				'keterangan'=>$request['keterangan'],
+			]);
+			return response()->json(['sukses'=>true]);
+		}else{
+			db::table('histori_pemeriksaan_object')->where('kategori_pemeriksaan',$request['kategori_pemeriksaan'])->update([
+				'keterangan'=>$request['keterangan'],
+			]);
+			return response()->json(['sukses'=>false]);
+		}
+		
+	}
+
+	public function list_pemeriksaan_object($id)
+	{
+		$cek = db::table('histori_pemeriksaan_object')->where('registrasi_id',$id)->count();
+		
+		if($cek<1)
+		{DB::statement(DB::raw('set @rownum=0'));
+			$histori = db::table('registrasis')->where('id',$id)->get();
+			return DataTables::of($histori)
+			->addColumn('kategori_pemeriksaan', function ($data) {
+				
+				$btn = '';
+				return $btn;
+			})
+			->addColumn('keterangan', function ($data) {
+				
+				$btn = '';
+				return $btn;
+			})
+			->addColumn('aksi', function ($data) {
+				
+				$btn = '';
+				return $btn;
+			})
+			->rawColumns(['aksi','kategori_pemeriksaan','keterangan'])
+			->make(true);
+		}else{
+			DB::statement(DB::raw('set @rownum=0'));
+			$histori = db::table('histori_pemeriksaan_object')->where('registrasi_id',$id)
+			->select([
+				DB::raw('@rownum  := @rownum  + 1 AS rownum'),
+				'id','kategori_pemeriksaan','keterangan'
+			]);
+			return DataTables::of($histori)
+			->addColumn('aksi', function ($data) {
+				
+				$btn = '<a class="btn btn-flat btn-danger btn-danger btn-sm hapus_pemeriksaan_object" data-id="'.$data->id.'">Hapus</a>';
+				return $btn;
+			})
+			->rawColumns(['aksi'])
+			->make(true);
+			}
+			
+	}
+	public function hapus_pemeriksaan_object($id)
+	{   
+		db::table('histori_pemeriksaan_object')->where('id',$id)->delete();
+		return response()->json(['sukses' => true]);
+	}
+	
+	public function cek_pembayaran(Request $request)
+	{   
+		$cek = Registrasi::where('id',$request['registrasi_id'])->first();
+		if($cek->status_reg='J%')
+		{
+			$jenis='TA';
+		}elseif($cek->status_reg='I%')
+		{
+			$jenis='TI';
+		}else{
+			$jenis='TG';
+		}
+		$cek_histori_object = db::table('histori_pemeriksaan_object')->where('registrasi_id',$request['registrasi_id'])->count();
+		$cek_tindakan = db::table('folios')->where('registrasi_id',$request['registrasi_id'])->where('jenis',$jenis)->whereNotIn('namatarif',['Biaya Registrasi','Biaya Pendaftaran Rawat Inap'])->count();
+		if($cek->berat_badan==null)
+		{
+			$note = 'mohon input terlebih dahulu berat badan';
+			return response()->json(['sukses' => false,'note'=>$note]);	
+		}elseif($cek->tekanan_darah==null)
+		{
+			$note = 'mohon input terlebih dahulu Tekanan Darah / Tensi';
+			return response()->json(['sukses' => false,'note'=>$note]);	
+		}elseif($cek->tinggi==null)
+		{
+			$note = 'mohon input terlebih dahulu Tinggi Badan';
+			return response()->json(['sukses' => false,'note'=>$note]);	
+		}elseif($cek->suhu==null)
+		{
+			$note = 'mohon input terlebih dahulu Suhu Badan';
+			return response()->json(['sukses' => false,'note'=>$note]);	
+		}elseif($cek->respirasi==null)
+		{
+			$note = 'mohon input terlebih dahulu Respirasi';
+			return response()->json(['sukses' => false,'note'=>$note]);	
+		}elseif($cek->tingkat_keluhan_pasien==null)
+		{
+			$note = 'mohon input terlebih dahulu Tingkat Keluhan';
+			return response()->json(['sukses' => false,'note'=>$note]);	
+		}elseif($cek->tingkat_keluhan_pasien==null)
+		{
+			$note = 'mohon input terlebih dahulu Tingkat Keluhan';
+			return response()->json(['sukses' => false,'note'=>$note]);	
+		}elseif($cek_histori_object<11)
+		{
+			$note = 'mohon input terlebih dahulu Pemeriksaan Object';
+			return response()->json(['sukses' => false,'note'=>$note]);	
+		}elseif($cek->diagnosa_awal==null and $cek->diagnosa_akhir==null)
+		{
+			$note = 'mohon input terlebih dahulu Tingkat Keluhan';
+			return response()->json(['sukses' => false,'note'=>$note]);	
+		}elseif($cek->diagnosa_awal==null and $cek->diagnosa_akhir==null)
+		{
+			$note = 'mohon input terlebih dahulu Tingkat Keluhan';
+			return response()->json(['sukses' => false,'note'=>$note]);	
+		}elseif($cek_tindakan<1)
+		{
+			$note = 'mohon input terlebih dahulu Tindakan';
+			return response()->json(['sukses' => false,'note'=>$note]);	
+		}else{
+			$kondisi_pulang_pasien =  $request['kondisi_akhir_pasien'];
+			$total_biaya = Folio::where('registrasi_id',$request['registrasi_id'])->sum('total');
+			return response()->json(['sukses' => true,'kondisi_pasien'=>$kondisi_pulang_pasien,'total_biaya'=>'Rp. '.number_format($total_biaya)]);
+		}
+		
+	}
+
+	public function get_data_biaya($id)
+	{
+		DB::statement(DB::raw('set @rownum=0'));
+		$folio = Folio::where('registrasi_id',$id)->whereIn('jenis',['TA','TI','TG'])
+		->select([
+			DB::raw('@rownum  := @rownum  + 1 AS rownum'),
+			'namatarif','total','poli_id','id'
+			])->get();
+		return DataTables::of($folio)
+		->addColumn('number_total', function ($data) {
+            
+            $btn = number_format($data->total);
+            return $btn;
+		})
+		->addColumn('poli', function ($data) {
+            
+            $btn = baca_poli($data->poli_id);
+            return $btn;
+		})
+		->addColumn('pelaksana', function ($data) {
+			$cek_1 = db::table('foliopelaksanas')->where('folio_id',$data->id)->count();
+			if($cek_1>0)
+			{
+				$data_1 = db::table('foliopelaksanas')->where('folio_id',$data->id)->first();
+				$btn = baca_dokter($data_1->dokter_pelaksana);
+            }else{
+				$btn = ' ';
+			}
+            return $btn;
+        })
+		->make(true);
+	}
+
+	public function get_data_biaya_obat($id)
+	{
+		DB::statement(DB::raw('set @rownum=0'));
+		$folio = Folio::where('registrasi_id',$id)->where('namatarif','like','FR%')->first();
+		$obat = db::table('penjualandetails')->join('masterobats','masterobats.id','=','penjualandetails.masterobat_id')->whereNull('penjualandetails.alasan_hapus')->where('penjualandetails.no_resep',$folio->namatarif)
+		->select(DB::raw('@rownum  := @rownum  + 1 AS rownum'),'masterobats.nama','penjualandetails.no_resep','penjualandetails.jumlah','penjualandetails.aturan_pakai','penjualandetails.hargajual')->get();
+		return DataTables::of($obat)
+		->addColumn('total', function ($data) {
+            
+            $btn = 'Rp. '.number_format($data->hargajual);
+            return $btn;
+		})
+		->make(true);
+	}
+	public function get_total_biaya($id)
+	{   
+		$folio = Folio::where('registrasi_id',$id)->sum('total');
+		return response()->json(['sukses' => true,'folio'=>'Rp. '.number_format($folio)]);
+	}
+
+	public function update_saran_dokter(Request $request)
+	{   
+		Registrasi::where('id',$request['registrasi_id'])->update([
+			'saran'=>$request['saran'],
+			'tanggal_kontrol'=>valid_date($request['tanggal_kontrol']),
+		]);
+		$reg = Registrasi::where('id',$request['registrasi_id'])->first();
+		return response()->json(['sukses' => true]);
+	}
+}
